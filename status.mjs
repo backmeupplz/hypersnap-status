@@ -47,18 +47,26 @@ const hostOf = (url) => {
 }
 
 /** A crawl ({ probes, seen } as Maps) → { status, shards, nodes, other }. */
-export function summarize({ probes, seen }, vals, at = Date.now()) {
-  // shard tips: the highest height any Hypersnap API node reports; liveness: the freshest block any of them has
-  const tips = new Map()
+/** A node's shardInfos, keeping only well-formed entries (they come from whoever answers). */
+const shardsOf = (p) => (Array.isArray(p?.info?.shardInfos) ? p.info.shardInfos : [])
+  .filter((s) => Number.isInteger(s?.shardId) && s.shardId >= 0 && s.shardId < 16 && Number.isSafeInteger(s.maxHeight) && Number.isFinite(s.blockDelay))
+
+// the second-best value when two or more nodes report: one bogus node can't move a shard's tip or hide a halt
+const second = (xs, better) => (xs.sort(better), xs[Math.min(1, xs.length - 1)])
+
+export function summarize({ probes, seen }, vals, at = Date.now(), known = new Set()) {
+  // shard tips: the highest height two Hypersnap API nodes agree on; liveness: the freshest block two of them have
+  const per = new Map()
   for (const p of probes.values()) {
     if (p.hyper !== true) continue
-    for (const s of p.info?.shardInfos ?? []) {
-      const t = tips.get(s.shardId) ?? { id: s.shardId, tip: 0, delay: Infinity }
-      t.tip = Math.max(t.tip, s.maxHeight ?? 0)
-      t.delay = Math.min(t.delay, s.blockDelay ?? Infinity)
-      tips.set(s.shardId, t)
+    for (const s of shardsOf(p)) {
+      const t = per.get(s.shardId) ?? { heights: [], delays: [] }
+      t.heights.push(s.maxHeight)
+      t.delays.push(s.blockDelay)
+      per.set(s.shardId, t)
     }
   }
+  const tips = new Map([...per].map(([id, t]) => [id, { id, tip: second(t.heights, (a, b) => b - a), delay: second(t.delays, (a, b) => a - b) }]))
   // the validators of each shard's current and next set (older sets are pre-fork Snapchain's)
   const sets = new Map([...tips.values()].map((t) => [t.id, setsAt(vals, t.id, t.tip)]))
   const validatorPeers = new Map()
@@ -67,7 +75,8 @@ export function summarize({ probes, seen }, vals, at = Date.now()) {
   const isHyper = (id) => {
     const p = probes.get(id)
     if (p?.hyper != null) return p.hyper
-    return validatorPeers.has(id) || !!seen.get(id)?.contact?.capabilities?.includes('hyper:v1')
+    // once a peer was Hypersnap it stays so, unless its own API says otherwise
+    return known.has(id) || validatorPeers.has(id) || !!seen.get(id)?.caps?.has('hyper:v1')
   }
   const ids = new Set([...probes.keys(), ...seen.keys()])
   const hyper = [...ids].filter(isHyper)
@@ -80,7 +89,7 @@ export function summarize({ probes, seen }, vals, at = Date.now()) {
     const url = urls.find((u) => u.startsWith('https:') && hostOf(u)) ?? urls.find(hostOf) ?? urls[0] ?? null
     const ann = g?.contact?.announce_rpc_address
     const annHost = ann && (() => { try { return hostOf(ann) } catch { return null } })()
-    const shards = (p?.info?.shardInfos ?? []).map((s) => ({ id: s.shardId, height: s.maxHeight, lag: Math.max(0, tips.get(s.shardId).tip - s.maxHeight), delay: s.blockDelay, mempool: s.mempoolSize })).sort((a, b) => a.id - b.id)
+    const shards = shardsOf(p).map((s) => ({ id: s.shardId, height: s.maxHeight, lag: Math.max(0, (tips.get(s.shardId)?.tip ?? s.maxHeight) - s.maxHeight), delay: s.blockDelay, mempool: s.mempoolSize })).sort((a, b) => a.id - b.id)
     const ip = (url && !hostOf(url) && new URL(url).hostname) || g?.ip || null
     return {
       id,

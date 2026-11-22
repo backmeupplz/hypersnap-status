@@ -15,6 +15,7 @@ const date = (t) => new Date(t).toLocaleString('en-US', { month: 'short', day: '
 const flag = (cc) => (cc ? String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 127397 + c.charCodeAt(0))) : '')
 const where = (g) => (g ? `${flag(g.cc)} ${[g.city, g.country].filter(Boolean).join(', ')}` : '')
 const STATE = { synced: 'Synced', syncing: 'Syncing', gossip: 'Seen in gossip', offline: 'Offline' }
+const span = (d) => (Date.now() - d.since < 30 * 864e5 ? 'since launch' : 'over 30 days')
 const SHARD = (id) => (id === 0 ? 'Block shard' : 'Message shard')
 
 /** 90 day bars (or any ratios) as one strip, colored by up-ratio, with a tooltip per bar. */
@@ -43,13 +44,13 @@ ${d.shards.map((s) => `<section class="card shard">
   <div class="row small"><span class="squares">${s.validators.map((v) => `<i class="${v.online ? 'g' : 'n'}" title="${esc(v.name)}: ${v.online ? 'in the mesh' : 'not seen'}"></i>`).join('')}</span>
   <span class="muted">${s.validators.filter((v) => v.online).length} of ${s.validators.length} validators in the mesh${s.next ? ` · new set of ${s.next.size} at #${num(s.next.at)} (${num(s.next.at - s.tip)} blocks away)` : ''}</span></div>
   ${bars(days(s.uptime), `Shard ${s.id} uptime, last 90 days`)}
-  <div class="row small muted"><span>90 days ago</span><span class="spacer"></span><span>${pct(s.uptime.d30)} live over 30 days</span><span class="spacer"></span><span>Today</span></div>
+  <div class="row small muted"><span>90 days ago</span><span class="spacer"></span><span>${pct(s.uptime.d30)} live ${span(d)}</span><span class="spacer"></span><span>Today</span></div>
 </section>`).join('')}
 
 <h2>Nodes <span class="muted">${d.nodes.length}</span></h2>
 <p class="chips">${Object.entries(counts).filter(([, n]) => n).map(([k, n]) => `<span class="chip ${k}"><span class="dot"></span>${n} ${STATE[k].toLowerCase()}</span>`).join('')}</p>
 <div class="nodes">
-<div class="nrow head"><span>Node</span><span>Location</span><span>Version</span><span>Sync</span><span>Latency</span><span>30 days</span><span class="hide-s">Last 30 days</span></div>
+<div class="nrow head"><span>Node</span><span>Location</span><span>Version</span><span>Sync</span><span>Latency</span><span>Uptime</span><span class="hide-s">Last 30 days</span></div>
 ${d.nodes.map((n) => {
   const lag = Math.max(0, ...(n.shards ?? []).map((s) => s.lag))
   return `<a class="nrow" href="/node/${esc(n.id)}">
@@ -103,7 +104,7 @@ function node(d, id) {
     ['Last seen', n.lastSeen ? ago(n.lastSeen) : 'now'],
   ]
   return `<p><a href="/">← Network</a></p>
-<section class="banner ${n.state}"><span class="dot"></span><div><h1>${esc(n.name)}</h1><p>${STATE[n.state]}${n.validator ? ' · validator' : ''} · ${pct(n.uptime?.d1)} up today · ${pct(n.uptime?.d30)} over 30 days</p></div></section>
+<section class="banner ${n.state}"><span class="dot"></span><div><h1>${esc(n.name)}</h1><p>${STATE[n.state]}${n.validator ? ' · validator' : ''} · ${pct(n.uptime?.d1)} up today · ${pct(n.uptime?.d30)} ${span(d)}</p></div></section>
 ${n.shards?.length ? `<h2>Shards</h2><div class="table"><table><thead><tr><th>Shard</th><th>Height</th><th>Behind tip</th><th>Last block</th><th>Mempool</th></tr></thead><tbody>
 ${n.shards.map((s) => `<tr><td>Shard ${s.id}</td><td class="mono">#${num(s.height)}</td><td class="mono ${s.lag > 60 ? 'warn' : ''}">${num(s.lag)}</td>
 <td class="${tips.get(s.id)?.stalled ? 'bad' : ''}">${dur(s.delay)} ago</td><td class="mono">${num(s.mempool)}</td></tr>`).join('')}</tbody></table></div>` : ''}

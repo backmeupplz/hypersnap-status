@@ -98,6 +98,8 @@ td.bad { color: var(--bad); }
 
 @media (max-width: 760px) {
   .hide-s { display: none; }
+  .bars { gap: 1px; }
+  .bars i { min-width: 0; }
   .nrow { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
   .nrow.head { display: none; }
   .nrow > :nth-child(2) { grid-column: 1; grid-row: 2; padding-left: 20px; }

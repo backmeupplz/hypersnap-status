@@ -66,6 +66,6 @@ export function nodeCard(n, s) {
 <text x="126" y="218" font-family="Inter" font-weight="700" font-size="54" fill="${C.text}">${x(cut(n.name, 32))}</text>
 <text x="72" y="272" font-family="Inter" font-size="28" fill="${C.muted}">${x(cut(facts, 70))}</text>
 <text x="72" y="326" font-family="Inter" font-weight="700" font-size="28" fill="${STATE[n.state]}">${label}</text>
-<text x="1128" y="326" text-anchor="end" font-family="Inter" font-size="28" fill="${C.muted}">30-day uptime <tspan font-weight="700" fill="${C.text}">${up}</tspan></text>
+<text x="1128" y="326" text-anchor="end" font-family="Inter" font-size="28" fill="${C.muted}">${s.at - s.since < 30 * 864e5 ? 'Uptime since launch' : '30-day uptime'} <tspan font-weight="700" fill="${C.text}">${up}</tspan></text>
 ${shards || `<text x="72" y="400" font-family="Inter" font-size="26" fill="${C.muted}">No public API: seen by ${n.seenBy} peers in the gossip mesh</text>`}`)
 }

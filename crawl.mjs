@@ -112,11 +112,13 @@ export async function crawl(seeds) {
       probe.peers = peers.length
       for (const p of peers) {
         if (typeof p?.peer_id !== 'string') continue
-        const s = seen.get(p.peer_id) ?? { by: new Set(), ip: null, contact: null }
+        const s = seen.get(p.peer_id) ?? { by: new Set(), ip: null, contact: null, caps: new Set() }
         seen.set(p.peer_id, s)
         s.by.add(id)
         s.ip ||= ip4(p.contact_info?.gossip_address) || ip4(p.observed_address)
         if (p.contact_info && !(s.contact?.timestamp > p.contact_info.timestamp)) s.contact = p.contact_info
+        // older nodes relay contacts without capabilities, so they add up across observers
+        for (const c of Array.isArray(p.contact_info?.capabilities) ? p.contact_info.capabilities : []) s.caps.add(c)
         queue.push(...candidates(p))
       }
     }))

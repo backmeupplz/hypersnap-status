@@ -3,74 +3,27 @@
 import { Resvg } from '@resvg/resvg-js'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { DatabaseSync } from 'node:sqlite'
 import { brotliCompressSync, gzipSync } from 'node:zlib'
 import { crawl } from './crawl.mjs'
 import { nodeCard, siteCard } from './og.mjs'
 import { parseValidators, summarize } from './status.mjs'
+import { known, locate, meta, open, record } from './store.mjs'
 
 const SITE = process.env.SITE ?? 'https://hypersnap.borodutch.com'
 const PORT = +(process.env.PORT ?? 3000)
 const DATA = process.env.DATA_DIR ?? './data'
 const EVERY = 60_000
-const KEEP = 7 * 864e5 // a node unseen this long drops off the list
 const SEEDS = ['https://haatz.quilibrium.com', 'https://hypersnap.imgnai.com', 'https://ohsnap.schmidtiest.xyz', 'http://85.209.231.221:3381']
 const VALIDATORS = 'https://raw.githubusercontent.com/farcasterorg/hypersnap/main/validators.toml'
 
-const db = new DatabaseSync(`${DATA}/status.db`)
-db.exec(`PRAGMA journal_mode = WAL;
-  CREATE TABLE IF NOT EXISTS peers (id TEXT PRIMARY KEY, first INTEGER, last INTEGER, url TEXT, json TEXT);
-  CREATE TABLE IF NOT EXISTS hourly (id TEXT, hour INTEGER, up INTEGER, total INTEGER, PRIMARY KEY (id, hour));
-  CREATE TABLE IF NOT EXISTS incidents (n INTEGER PRIMARY KEY, shard INTEGER, start INTEGER, end INTEGER);
-  CREATE TABLE IF NOT EXISTS geo (ip TEXT PRIMARY KEY, json TEXT);
-  CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);`)
-const meta = (k, v) => v === undefined ? db.prepare('SELECT v FROM meta WHERE k = ?').get(k)?.v : db.prepare('INSERT OR REPLACE INTO meta VALUES (?, ?)').run(k, v)
-if (!meta('since')) meta('since', String(Date.now()))
-
-let vals = parseValidators(meta('validators') ?? readFileSync(new URL('fixture-validators.toml', import.meta.url), 'utf8'))
+const db = open(`${DATA}/status.db`)
+let vals = parseValidators(meta(db, 'validators') ?? readFileSync(new URL('fixture-validators.toml', import.meta.url), 'utf8'))
 async function refreshValidators() {
   try {
     const r = await fetch(VALIDATORS, { signal: AbortSignal.timeout(10_000) })
     const text = r.ok && (await r.text())
-    if (text?.includes('[[consensus.validator_sets]]')) (vals = parseValidators(text)), meta('validators', text)
+    if (text?.includes('[[consensus.validator_sets]]')) (vals = parseValidators(text)), meta(db, 'validators', text)
   } catch {}
-}
-
-// country, city and network of each node's IP (ip-api.com, looked up once per IP)
-async function locate(ips) {
-  const has = db.prepare('SELECT 1 FROM geo WHERE ip = ?')
-  const todo = [...new Set(ips)].filter((ip) => ip && !has.get(ip)).slice(0, 100)
-  if (!todo.length) return
-  try {
-    const r = await fetch('http://ip-api.com/batch?fields=status,query,countryCode,country,city,isp,org', { method: 'POST', body: JSON.stringify(todo), signal: AbortSignal.timeout(10_000) })
-    for (const g of await r.json()) {
-      if (g.status === 'success') db.prepare('INSERT OR REPLACE INTO geo VALUES (?, ?)').run(g.query, JSON.stringify({ cc: g.countryCode, country: g.country, city: g.city, org: g.org || g.isp }))
-    }
-  } catch {}
-}
-const geoOf = (ip) => (ip && JSON.parse(db.prepare('SELECT json FROM geo WHERE ip = ?').get(ip)?.json ?? 'null')) || null
-
-const hourOf = (t) => Math.floor(t / 36e5)
-const tally = db.prepare('INSERT INTO hourly VALUES (?, ?, ?, 1) ON CONFLICT (id, hour) DO UPDATE SET up = up + excluded.up, total = total + 1')
-
-/** Up-ratio per UTC day for the last 90 days (null where there's no data), and the 1/30-day percentages. */
-function history(at) {
-  const from = hourOf(at) - 90 * 24 + 1
-  const today = Math.floor(at / 864e5)
-  const out = new Map()
-  for (const r of db.prepare('SELECT id, hour, up, total FROM hourly WHERE hour >= ?').all(from)) {
-    const h = out.get(r.id) ?? { days: Array(90).fill(null).map(() => [0, 0]), d1: [0, 0], d30: [0, 0] }
-    out.set(r.id, h)
-    const day = 89 - (today - Math.floor(r.hour / 24))
-    if (day >= 0) (h.days[day][0] += r.up), (h.days[day][1] += r.total)
-    if (r.hour > hourOf(at) - 24) (h.d1[0] += r.up), (h.d1[1] += r.total)
-    if (r.hour > hourOf(at) - 30 * 24) (h.d30[0] += r.up), (h.d30[1] += r.total)
-  }
-  const ratio = ([u, t]) => (t ? u / t : null)
-  return (id) => {
-    const h = out.get(id)
-    return h ? { days: h.days.map(ratio), d1: ratio(h.d1), d30: ratio(h.d30) } : { days: Array(90).fill(null), d1: null, d30: null }
-  }
 }
 
 let snapshot = null
@@ -80,32 +33,12 @@ async function tick() {
   busy = true
   try {
     const at = Date.now()
-    const known = db.prepare('SELECT url FROM peers WHERE last > ? AND url IS NOT NULL').all(at - KEEP).map((r) => r.url)
-    const s = summarize(await crawl([...SEEDS, ...known]), vals, at)
-    await locate(s.nodes.map((n) => n.ip))
-    const hour = hourOf(at)
-    const upsert = db.prepare('INSERT INTO peers VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET last = excluded.last, url = coalesce(excluded.url, url), json = excluded.json')
-    for (const n of s.nodes) upsert.run(n.id, at, at, n.url, JSON.stringify(n)), tally.run(n.id, hour, 1)
-    // known nodes this crawl didn't find count as down
-    const live = new Set(s.nodes.map((n) => n.id))
-    for (const p of db.prepare('SELECT id, json, last FROM peers WHERE last > ?').all(at - KEEP)) {
-      if (live.has(p.id)) continue
-      tally.run(p.id, hour, 0)
-      s.nodes.push({ ...JSON.parse(p.json), state: 'offline', ms: null, peers: null, seenBy: 0, lastSeen: p.last })
-    }
-    for (const sh of s.shards) {
-      tally.run(`shard:${sh.id}`, hour, sh.stalled ? 0 : 1)
-      const open = db.prepare('SELECT n FROM incidents WHERE shard = ? AND end IS NULL').get(sh.id)
-      if (sh.stalled && !open) db.prepare('INSERT INTO incidents (shard, start) VALUES (?, ?)').run(sh.id, at - (Number.isFinite(sh.delay) ? sh.delay * 1000 : 0))
-      if (!sh.stalled && open) db.prepare('UPDATE incidents SET end = ? WHERE n = ?').run(at, open.n)
-    }
-    const up = history(at)
-    const firsts = new Map(db.prepare('SELECT id, first FROM peers').all().map((r) => [r.id, r.first]))
-    for (const n of s.nodes) Object.assign(n, { geo: geoOf(n.ip), uptime: up(n.id), firstSeen: firsts.get(n.id) ?? at })
-    for (const sh of s.shards) sh.uptime = up(`shard:${sh.id}`)
-    s.incidents = db.prepare('SELECT shard, start, end FROM incidents ORDER BY start DESC LIMIT 20').all()
-    s.since = +meta('since')
-    snapshot = s
+    const peers = known(db, at)
+    const s = summarize(await crawl([...SEEDS, ...peers.map((p) => p.url).filter(Boolean)]), vals, at, new Set(peers.map((p) => p.id)))
+    // no Hypersnap API answered at all: more likely our own network than the whole network, so record nothing
+    if (!s.nodes.some((n) => n.state !== 'gossip')) return void console.error('crawl reached no Hypersnap API; keeping the last snapshot')
+    await locate(db, s.nodes.map((n) => n.ip))
+    snapshot = record(db, s, at)
     cache.clear()
   } catch (e) {
     console.error('crawl failed', e)
@@ -141,7 +74,7 @@ export function describe(s) {
 function page(path, node) {
   const title = node ? `${node.name} · Hypersnap node status` : 'Hypersnap Network Status'
   const desc = node
-    ? `${node.validator ? 'Validator' : 'Node'} ${node.name}${node.version ? ` running Hypersnap ${node.version}` : ''}: ${node.state}${node.uptime?.d30 != null ? `, ${(node.uptime.d30 * 100).toFixed(2)}% uptime over 30 days` : ''}. Live health, shard heights and history.`
+    ? `${node.validator ? 'Validator' : 'Node'} ${node.name}${node.version ? ` running Hypersnap ${node.version}` : ''}: ${node.state}${node.uptime?.d30 != null ? `, ${(node.uptime.d30 * 100).toFixed(2)}% uptime ${snapshot.at - snapshot.since < 30 * 864e5 ? 'since tracking began' : 'over 30 days'}` : ''}. Live health, shard heights and history.`
     : describe(snapshot)
   const image = node ? `${SITE}/og/node/${node.id}.png` : `${SITE}/og.png`
   const url = SITE + path
@@ -188,7 +121,7 @@ createServer((req, res) => {
   if (m) {
     const node = nodeById(m[1])
     if (!node) return send(req, res, 404, 'application/json', '{"error":"unknown node"}')
-    const hours = db.prepare('SELECT hour, up, total FROM hourly WHERE id = ? AND hour > ? ORDER BY hour').all(node.id, hourOf(Date.now()) - 48)
+    const hours = db.prepare('SELECT hour, up, total FROM hourly WHERE id = ? AND hour > ? ORDER BY hour').all(node.id, Math.floor(Date.now() / 36e5) - 48)
     return send(req, res, 200, 'application/json', JSON.stringify({ node, hours }))
   }
   if (path === '/og.png') return snapshot ? send(req, res, 200, 'image/png', png('site', siteCard(snapshot)), 300) : send(req, res, 503, 'text/plain', 'warming up', 0)

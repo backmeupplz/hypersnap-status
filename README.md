@@ -8,10 +8,10 @@ Every minute `crawl.mjs` walks the mesh starting from a few public nodes. It ask
 
 `status.mjs` turns a crawl into the network state:
 
-- **Shards:** a shard's tip is the highest height any Hypersnap node reports. It's halted when no node has seen a block for 2 minutes.
+- **Shards:** a shard's tip is the highest height two Hypersnap nodes agree on. It's halted when no two nodes have seen a block in 2 minutes. A peer that was Hypersnap once stays listed unless its own API says otherwise.
 - **Nodes:** a node more than 60 blocks behind a tip is syncing.
 
-`server.mjs` keeps hourly uptime and incidents in SQLite (`DATA_DIR`) and serves the following:
+`store.mjs` keeps hourly uptime and incidents in SQLite (`DATA_DIR`). `server.mjs` serves the following:
 
 - the SPA (`public/`), with per-page meta tags and the live snapshot inlined
 - `/api/status` and `/api/node/<peer id>`
