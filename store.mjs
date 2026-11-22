@@ -12,11 +12,16 @@ export function open(path) {
     CREATE TABLE IF NOT EXISTS incidents (n INTEGER PRIMARY KEY, shard INTEGER, start INTEGER, end INTEGER);
     CREATE TABLE IF NOT EXISTS geo (ip TEXT PRIMARY KEY, json TEXT);
     CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);`)
+  // 0.3: rows from before Snapchain was tracked are Hypersnap's
+  for (const t of ['peers', 'incidents'])
+    if (!db.prepare(`PRAGMA table_info(${t})`).all().some((c) => c.name === 'net')) db.exec(`ALTER TABLE ${t} ADD COLUMN net TEXT NOT NULL DEFAULT 'hypersnap'`)
   return db
 }
 
 export const meta = (db, k, v) => v === undefined ? db.prepare('SELECT v FROM meta WHERE k = ?').get(k)?.v : db.prepare('INSERT OR REPLACE INTO meta VALUES (?, ?)').run(k, v)
-export const known = (db, at) => db.prepare('SELECT id, url FROM peers WHERE last > ?').all(at - KEEP)
+export const known = (db, at) => db.prepare('SELECT id, url, net FROM peers WHERE last > ?').all(at - KEEP)
+// Hypersnap's shard rows keep the ids they had before Snapchain was tracked
+const shardKey = (net, id) => (net === 'hypersnap' ? `shard:${id}` : `${net}:shard:${id}`)
 
 /** Up-ratio per UTC day for the last 90 days (null where there's no data), and the 1/30-day ratios. */
 function history(db, at) {
@@ -38,26 +43,26 @@ function history(db, at) {
   }
 }
 
-/** Records one summarized crawl and returns it filled in: offline nodes, uptime, locations, incidents, `since`. */
-export function record(db, s, at) {
+/** Records one network's summary from a crawl and returns it filled in: offline nodes, uptime, locations, incidents. */
+export function record(db, net, s, at) {
   const hour = hourOf(at)
   const tally = db.prepare('INSERT INTO hourly VALUES (?, ?, ?, 1) ON CONFLICT (id, hour) DO UPDATE SET up = up + excluded.up, total = total + 1')
-  const upsert = db.prepare('INSERT INTO peers VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET last = excluded.last, url = coalesce(excluded.url, url), json = excluded.json')
+  const upsert = db.prepare('INSERT INTO peers (id, first, last, url, json, net) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET last = excluded.last, url = coalesce(excluded.url, url), json = excluded.json, net = excluded.net')
   db.exec('BEGIN')
   try {
     if (!meta(db, 'since')) meta(db, 'since', String(at))
-    for (const n of s.nodes) upsert.run(n.id, at, at, n.url, JSON.stringify(n)), tally.run(n.id, hour, 1)
-    // known nodes this crawl didn't find count as down
+    for (const n of s.nodes) upsert.run(n.id, at, at, n.url, JSON.stringify(n), net), tally.run(n.id, hour, 1)
+    // this network's known nodes that the crawl didn't find count as down
     const live = new Set(s.nodes.map((n) => n.id))
-    for (const p of db.prepare('SELECT id, json, last FROM peers WHERE last > ?').all(at - KEEP)) {
+    for (const p of db.prepare('SELECT id, json, last FROM peers WHERE last > ? AND net = ?').all(at - KEEP, net)) {
       if (live.has(p.id)) continue
       tally.run(p.id, hour, 0)
-      s.nodes.push({ ...JSON.parse(p.json), state: 'offline', ms: null, peers: null, seenBy: 0, lastSeen: p.last })
+      s.nodes.push({ ...JSON.parse(p.json), net, state: 'offline', ms: null, peers: null, seenBy: 0, lastSeen: p.last })
     }
     for (const sh of s.shards) {
-      tally.run(`shard:${sh.id}`, hour, sh.stalled ? 0 : 1)
-      const open = db.prepare('SELECT n FROM incidents WHERE shard = ? AND end IS NULL').get(sh.id)
-      if (sh.stalled && !open) db.prepare('INSERT INTO incidents (shard, start) VALUES (?, ?)').run(sh.id, at - (Number.isFinite(sh.delay) ? sh.delay * 1000 : 0))
+      tally.run(shardKey(net, sh.id), hour, sh.stalled ? 0 : 1)
+      const open = db.prepare('SELECT n FROM incidents WHERE net = ? AND shard = ? AND end IS NULL').get(net, sh.id)
+      if (sh.stalled && !open) db.prepare('INSERT INTO incidents (shard, start, net) VALUES (?, ?, ?)').run(sh.id, at - (Number.isFinite(sh.delay) ? sh.delay * 1000 : 0), net)
       if (!sh.stalled && open) db.prepare('UPDATE incidents SET end = ? WHERE n = ?').run(at, open.n)
     }
     db.exec('COMMIT')
@@ -69,9 +74,8 @@ export function record(db, s, at) {
   const firsts = new Map(db.prepare('SELECT id, first FROM peers').all().map((r) => [r.id, r.first]))
   const geo = db.prepare('SELECT json FROM geo WHERE ip = ?')
   for (const n of s.nodes) Object.assign(n, { geo: (n.ip && JSON.parse(geo.get(n.ip)?.json ?? 'null')) || null, uptime: up(n.id), firstSeen: firsts.get(n.id) ?? at })
-  for (const sh of s.shards) sh.uptime = up(`shard:${sh.id}`)
-  s.incidents = db.prepare('SELECT shard, start, end FROM incidents ORDER BY start DESC LIMIT 20').all()
-  s.since = +meta(db, 'since')
+  for (const sh of s.shards) sh.uptime = up(shardKey(net, sh.id))
+  s.incidents = db.prepare('SELECT shard, start, end FROM incidents WHERE net = ? ORDER BY start DESC LIMIT 20').all(net).map((r) => ({ ...r }))
   return s
 }
 

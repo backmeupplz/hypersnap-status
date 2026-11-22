@@ -1,5 +1,6 @@
 // 1200×630 share cards, drawn as SVG from the live snapshot (server.mjs renders them with resvg).
 
+export const NAMES = { hypersnap: 'Hypersnap', snapchain: 'Snapchain' }
 const C = { bg: '#0c0e13', panel: '#151922', line: '#232937', text: '#f2f4f8', muted: '#8b93a7', ok: '#2fbf71', warn: '#f0a020', bad: '#ef4b4b', off: '#3a4150' }
 const STATE = { operational: C.ok, partial: C.warn, major: C.bad, synced: C.ok, syncing: C.warn, gossip: C.ok, offline: C.bad }
 const x = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
@@ -14,11 +15,11 @@ export function dur(s) {
   return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`
 }
 
-const frame = (body) => `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+const frame = (net, body) => `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
 <defs><radialGradient id="g" cx="0.15" cy="0" r="1"><stop offset="0" stop-color="#1b2133"/><stop offset="1" stop-color="${C.bg}"/></radialGradient></defs>
 <rect width="1200" height="630" fill="url(#g)"/>
 <g transform="translate(72 64)"><rect width="40" height="40" rx="10" fill="#6d5dfc"/><path d="M12 13h16M12 20h10M12 27h16" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/></g>
-<text x="128" y="93" font-family="Inter" font-weight="700" font-size="28" fill="${C.text}">Hypersnap Network Status</text>
+<text x="128" y="93" font-family="Inter" font-weight="700" font-size="28" fill="${C.text}">${NAMES[net]} Network Status</text>
 <text x="1128" y="93" text-anchor="end" font-family="Inter" font-size="24" fill="${C.muted}">hypersnap.borodutch.com</text>
 ${body}</svg>`
 
@@ -29,7 +30,7 @@ export function headline(s) {
   return `${halted.length === 1 ? 'Shard' : 'Shards'} ${halted.map((h) => h.id).join(', ')} halted`
 }
 
-export function siteCard(s) {
+export function siteCard(s, net = 'hypersnap') {
   const online = s.nodes.filter((n) => n.state !== 'offline').length
   const vs = new Map(s.shards.flatMap((h) => h.validators).map((v) => [v.key, v.online]))
   const rows = s.shards.map((h, i) => {
@@ -43,7 +44,7 @@ export function siteCard(s) {
 ${squares}<text x="${600 + h.validators.length * 22 + 8}" y="${y - 5}" font-family="Inter" font-size="22" fill="${C.muted}">${on}/${h.validators.length}</text>
 <text x="1104" y="${y - 5}" text-anchor="end" font-family="Inter" font-weight="700" font-size="26" fill="${h.stalled ? C.bad : C.ok}">${h.stalled ? `halted ${dur(h.delay)}` : 'live'}</text>`
   }).join('\n')
-  return frame(`<circle cx="94" cy="196" r="16" fill="${STATE[s.status]}"/>
+  return frame(net, `<circle cx="94" cy="196" r="16" fill="${STATE[s.status]}"/>
 <text x="126" y="218" font-family="Inter" font-weight="700" font-size="62" fill="${C.text}">${x(headline(s))}</text>
 <text x="72" y="270" font-family="Inter" font-size="28" fill="${C.muted}">${online} nodes online · ${[...vs.values()].filter(Boolean).length} of ${vs.size} validators in the mesh</text>
 ${rows}
@@ -62,7 +63,7 @@ export function nodeCard(n, s) {
 <text x="230" y="${y}" font-family="Inter" font-size="26" fill="${C.muted}">#${num(h.height)}</text>
 <text x="560" y="${y}" font-family="Inter" font-size="26" fill="${h.lag > 60 ? C.warn : C.ok}">${h.lag > 60 ? `${num(h.lag)} blocks behind` : tip?.stalled ? 'at tip (shard halted)' : 'at tip'}</text>`
   }).join('\n')
-  return frame(`<circle cx="94" cy="196" r="16" fill="${STATE[n.state]}"/>
+  return frame(n.net ?? 'hypersnap', `<circle cx="94" cy="196" r="16" fill="${STATE[n.state]}"/>
 <text x="126" y="218" font-family="Inter" font-weight="700" font-size="54" fill="${C.text}">${x(cut(n.name, 32))}</text>
 <text x="72" y="272" font-family="Inter" font-size="28" fill="${C.muted}">${x(cut(facts, 70))}</text>
 <text x="72" y="326" font-family="Inter" font-weight="700" font-size="28" fill="${STATE[n.state]}">${label}</text>

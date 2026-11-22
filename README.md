@@ -1,10 +1,10 @@
 # Hypersnap Network Status
 
-Live status page for the [Hypersnap](https://github.com/farcasterorg/hypersnap) network at **[hypersnap.borodutch.com](https://hypersnap.borodutch.com)**: every node reachable through the gossip mesh, with its IP, location, version and sync state, each shard's latest block, validators and halts, plus uptime history.
+Live status page for the [Hypersnap](https://github.com/farcasterorg/hypersnap) network, and for upstream [Snapchain](https://github.com/farcasterxyz/snapchain) which shares its gossip mesh, at **[hypersnap.borodutch.com](https://hypersnap.borodutch.com)** (Snapchain at `/snapchain`): every node reachable through the mesh, with its IP, location, version and sync state, each shard's latest block, validators and halts, plus uptime history.
 
 ## How it works
 
-Every minute `crawl.mjs` walks the mesh starting from a few public nodes. It asks each node's HTTP API for `/v1/info` (version and shard heights) and `/v1/currentPeers` (the peers it's connected to), and follows those peers' addresses to more nodes. A node counts as Hypersnap when it serves `/v1/nativeRegistration` (upstream Snapchain answers 404), gossips the `hyper:v1` capability, or is in a current validator set from [`validators.toml`](https://github.com/farcasterorg/hypersnap/blob/main/validators.toml) (a validator's peer ID is derived from its key). Nodes without a public API show up as "seen in gossip".
+Every minute `crawl.mjs` walks the mesh starting from a few public nodes. It asks each node's HTTP API for `/v1/info` (version and shard heights) and `/v1/currentPeers` (the peers it's connected to), and follows those peers' addresses to more nodes. A node's own API decides its network: only Hypersnap serves `/v1/nativeRegistration` (Snapchain answers 404). A node without a public API keeps the network it had before. Failing that, it's placed by the current validator sets in each network's `validators.toml` ([Hypersnap](https://github.com/farcasterorg/hypersnap/blob/main/validators.toml), [Snapchain](https://github.com/farcasterxyz/snapchain/blob/main/validators.toml); a validator's peer ID is derived from its key), by the `hyper:v1` capability it gossips, or by Snapchain's known fleet. Nodes without a public API show up as "seen in gossip".
 
 `status.mjs` turns a crawl into the network state:
 

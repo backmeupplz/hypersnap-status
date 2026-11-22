@@ -46,7 +46,6 @@ const hostOf = (url) => {
   return /^[\d.]+$/.test(h) ? null : h
 }
 
-/** A crawl ({ probes, seen } as Maps) → { status, shards, nodes, other }. */
 /** A node's shardInfos, keeping only well-formed entries (they come from whoever answers). */
 const shardsOf = (p) => (Array.isArray(p?.info?.shardInfos) ? p.info.shardInfos : [])
   .filter((s) => Number.isInteger(s?.shardId) && s.shardId >= 0 && s.shardId < 16 && Number.isSafeInteger(s.maxHeight) && Number.isFinite(s.blockDelay))
@@ -54,11 +53,27 @@ const shardsOf = (p) => (Array.isArray(p?.info?.shardInfos) ? p.info.shardInfos 
 // the second-best value when two or more nodes report: one bogus node can't move a shard's tip or hide a halt
 const second = (xs, better) => (xs.sort(better), xs[Math.min(1, xs.length - 1)])
 
-export function summarize({ probes, seen }, vals, at = Date.now(), known = new Set()) {
-  // shard tips: the highest height two Hypersnap API nodes agree on; liveness: the freshest block two of them have
+export const NETWORKS = ['hypersnap', 'snapchain']
+
+// Snapchain's own fleet, by peer id (hypersnap src/network/mesh/nodes.rs, from Neynar's runbook): its validators.toml
+// labels some keys with the wrong operator, and readers have no key at all
+const FLEET = {
+  '12D3KooWCc28TYrrXFivwUshyZ8R5HqPMgx4f7AP54iCDLYr7kFR': 'mordor (Neynar)',
+  '12D3KooWSFyadP8BZkjhKGMcWVZrvVSxVfXEYip7R8jqeVjherRk': 'gondor (Neynar)',
+  '12D3KooWQaoBw2gvdmfGdXjepEQU9i47FXxvsCZ6wu8Vn4gwvHm2': 'rohan (Neynar)',
+  '12D3KooWJVyaQRovV1rjV8TzkN3cRiysACyey86kXDLdvf6JRq5Z': 'erebor (Neynar)',
+  '12D3KooWH527dqZTziqzzuXunismeJ3iFVnUxV5spv6VkS7U7zL1': 'snap (Merkle)',
+  '12D3KooWGmXDC2SfjSG7h7DchyVJHMB4GpA8JYpHf9iwz8L8BFqB': 'crackle (Merkle)',
+  '12D3KooWCpHGJd3WYMY4cnbP8wQk4AK99J8YQfczLTsa7w4HkGDP': 'pop (Merkle)',
+  '12D3KooWCnMgP8BYvwGG5eBfU3gLRnk1bA8BwCkrC3xMtHYp3dRR': 'pow (Merkle)',
+  '12D3KooWN1tfvjuYaMdkMbtfed6o5TmAnNw1szjaZowmhet8Y4uF': 'uno',
+}
+
+/** Per shard: the tip two of the network's API nodes agree on, and the freshest block two of them have. */
+function tipsOf(probes, hyper) {
   const per = new Map()
   for (const p of probes.values()) {
-    if (p.hyper !== true) continue
+    if (p.hyper !== hyper) continue
     for (const s of shardsOf(p)) {
       const t = per.get(s.shardId) ?? { heights: [], delays: [] }
       t.heights.push(s.maxHeight)
@@ -66,22 +81,43 @@ export function summarize({ probes, seen }, vals, at = Date.now(), known = new S
       per.set(s.shardId, t)
     }
   }
-  const tips = new Map([...per].map(([id, t]) => [id, { id, tip: second(t.heights, (a, b) => b - a), delay: second(t.delays, (a, b) => a - b) }]))
-  // the validators of each shard's current and next set (older sets are pre-fork Snapchain's)
-  const sets = new Map([...tips.values()].map((t) => [t.id, setsAt(vals, t.id, t.tip)]))
-  const validatorPeers = new Map()
-  for (const { current, next } of sets.values()) for (const k of [...(current?.keys ?? []), ...(next?.keys ?? [])]) validatorPeers.set(peerIdOf(k), k)
+  return new Map([...per].map(([id, t]) => [id, { id, tip: second(t.heights, (a, b) => b - a), delay: second(t.delays, (a, b) => a - b) }]))
+}
 
-  const isHyper = (id) => {
+/** The validators (peer id → key) of each shard's current and next set; older sets are history. */
+function validatorsOf(vals, tips) {
+  const sets = new Map([...tips.values()].map((t) => [t.id, setsAt(vals, t.id, t.tip)]))
+  const peers = new Map()
+  for (const { current, next } of sets.values()) for (const k of [...(current?.keys ?? []), ...(next?.keys ?? [])]) peers.set(peerIdOf(k), k)
+  return { sets, peers }
+}
+
+/**
+ * A crawl ({ probes, seen } as Maps) → { at, networks: { hypersnap, snapchain }, unknown }. Both networks share one
+ * gossip mesh. A peer's own API decides its network (only Hypersnap serves /v1/nativeRegistration); without one, the
+ * network it was in before (`known`: id → network), then validator sets, the hyper:v1 capability and Snapchain's fleet.
+ */
+export function summarize({ probes, seen }, vals, at = Date.now(), known = new Map()) {
+  const tips = { hypersnap: tipsOf(probes, true), snapchain: tipsOf(probes, false) }
+  const v = { hypersnap: validatorsOf(vals.hypersnap, tips.hypersnap), snapchain: validatorsOf(vals.snapchain, tips.snapchain) }
+  const netOf = (id) => {
     const p = probes.get(id)
-    if (p?.hyper != null) return p.hyper
-    // once a peer was Hypersnap it stays so, unless its own API says otherwise
-    return known.has(id) || validatorPeers.has(id) || !!seen.get(id)?.caps?.has('hyper:v1')
+    if (p?.hyper != null) return p.hyper ? 'hypersnap' : 'snapchain'
+    if (known.has(id)) return known.get(id)
+    if (v.hypersnap.peers.has(id) || seen.get(id)?.caps?.has('hyper:v1')) return 'hypersnap'
+    if (v.snapchain.peers.has(id) || FLEET[id]) return 'snapchain'
+    return null
   }
   const ids = new Set([...probes.keys(), ...seen.keys()])
-  const hyper = [...ids].filter(isHyper)
+  const by = { hypersnap: [], snapchain: [] }
+  for (const id of ids) by[netOf(id)]?.push(id)
+  const networks = Object.fromEntries(NETWORKS.map((net) => [net, network(net, by[net], probes, seen, vals[net], tips[net], v[net])]))
+  return { at, networks, unknown: ids.size - by.hypersnap.length - by.snapchain.length }
+}
 
-  const nodes = hyper.map((id) => {
+function network(net, ids, probes, seen, vals, tips, { sets, peers: validatorPeers }) {
+  const nameOf = (id, key) => (net === 'snapchain' && FLEET[id]) || (key && vals.names[key])
+  const nodes = ids.map((id) => {
     const p = probes.get(id)
     const g = seen.get(id)
     const key = validatorPeers.get(id)
@@ -93,11 +129,12 @@ export function summarize({ probes, seen }, vals, at = Date.now(), known = new S
     const ip = (url && !hostOf(url) && new URL(url).hostname) || g?.ip || null
     return {
       id,
-      name: (key && vals.names[key]) || (url && hostOf(url)) || annHost || ip || id.slice(-8),
+      net,
+      name: nameOf(id, key) || (url && hostOf(url)) || annHost || ip || id.slice(-8),
       validator: key ?? null,
       ip,
       url,
-      version: p?.info?.version ?? null,
+      version: typeof p?.info?.version === 'string' ? p.info.version.slice(0, 32) : null,
       ms: p?.ms ?? null,
       peers: p ? p.peers : null,
       seenBy: g?.by.size ?? 0,
@@ -108,14 +145,14 @@ export function summarize({ probes, seen }, vals, at = Date.now(), known = new S
     }
   }).sort((a, b) => (a.state === 'gossip') - (b.state === 'gossip') || !!b.validator - !!a.validator || a.name.localeCompare(b.name))
 
-  const online = new Set(hyper)
+  const online = new Set(ids)
   const shards = [...tips.values()].sort((a, b) => a.id - b.id).map((t) => {
     const { current, next } = sets.get(t.id)
-    const validators = (current?.keys ?? []).map((k) => ({ key: k, name: vals.names[k] ?? k.slice(0, 8), peer: peerIdOf(k), online: online.has(peerIdOf(k)) }))
+    const validators = (current?.keys ?? []).map((k) => ({ key: k, name: nameOf(peerIdOf(k), k) || k.slice(0, 8), peer: peerIdOf(k), online: online.has(peerIdOf(k)) }))
     return { id: t.id, tip: t.tip, delay: t.delay, stalled: !(t.delay <= STALL_S), validators, next: next && { at: next.at, size: next.keys.length } }
   })
 
   const halted = shards.filter((s) => s.stalled).length
   const status = !shards.length || halted === shards.length ? 'major' : halted ? 'partial' : 'operational'
-  return { at, status, shards, nodes, other: ids.size - hyper.length }
+  return { status, shards, nodes }
 }
