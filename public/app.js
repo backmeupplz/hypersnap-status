@@ -21,7 +21,7 @@ const flag = (cc) => (/^[A-Za-z]{2}$/.test(cc ?? '') ? String.fromCodePoint(...[
 const place = (g) => (g ? [g.city, g.cc].filter(Boolean).join(', ') : '')
 const STATE = { synced: 'Synced', syncing: 'Syncing', gossip: 'Gossip only', offline: 'Offline' }
 const PATH = { hypersnap: '/', snapchain: '/snapchain' }
-const span = () => (Date.now() - data.since < 30 * 864e5 ? 'since launch' : '30 days')
+const span = (since = data.since) => (Date.now() - since < 30 * 864e5 ? 'since launch' : '30 days')
 const pill = (cls, text, title = '') => `<span class="pill ${cls}"${title ? ` title="${esc(title)}"` : ''}>${text}</span>`
 const copy = (v) => `<button type="button" class="copy" data-copy="${esc(v)}">Copy</button>`
 
@@ -89,7 +89,7 @@ ${tile('Top version', `<span class="mono">${esc(versions[0]?.[0] ?? '—')}</spa
   <span class="small muted">${x.validators.filter((v) => v.online).length}/${x.validators.length} validators</span></div>
   ${x.next ? `<div class="small muted">Set of ${x.next.size} takes over at #${num(x.next.at)}</div>` : ''}
   ${bars(days(x.uptime), `Shard ${x.id}, last 90 days`, 'thin')}
-  <div class="legend"><span>90 days ago</span><span>${pct(x.uptime.d30)} live ${span()}</span></div>
+  <div class="legend"><span>90 days ago</span><span>${pct(x.uptime.d30)} live ${span(s.since)}</span></div>
 </article>`).join('')}</div>`,
     chips: Object.entries({ all: s.nodes.length, ...counts }).filter(([k, n]) => k === 'all' || n).map(([k, n]) =>
       `<button type="button" class="chip" data-filter="${k}" aria-pressed="${filter === k}">${k === 'all' ? 'All' : `<span class="dot ${k}"></span>${STATE[k]}`}<span class="count">${n}</span></button>`).join(''),
@@ -114,7 +114,7 @@ ${list.map((n) => `<a class="node" href="/node/${esc(n.id)}">
     }).join('')}</div>` : '',
     incidents: `<h2>Incidents</h2>${s.incidents.length ? `<ul class="incidents">${s.incidents.map((i) => `<li><span class="dot ${i.end ? 'ok' : 'bad'}"></span>
 <div class="stack"><strong>Shard ${i.shard} halted</strong><span class="small muted">${date(i.start)}${i.end ? ` – ${date(i.end)}` : ' · ongoing'}</span></div>
-${i.end ? pill('ok', `Resolved · ${dur((i.end - i.start) / 1000)}`) : pill('bad', `Ongoing · ${dur((Date.now() - i.start) / 1000)}`)}</li>`).join('')}</ul>` : `<p class="empty">No incidents since ${date(data.since)}.</p>`}`,
+${i.end ? pill('ok', `Resolved · ${dur((i.end - i.start) / 1000)}`) : pill('bad', `Ongoing · ${dur((Date.now() - i.start) / 1000)}`)}</li>`).join('')}</ul>` : `<p class="empty">No incidents since tracking began ${date(s.since ?? data.since)}.</p>`}`,
     other: data.unknown ? `<p class="small muted">${data.unknown} more peers in the gossip mesh have no public API or other marker, so their network is unknown and they aren't listed.</p>` : '',
   }
 }

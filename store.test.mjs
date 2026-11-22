@@ -19,6 +19,8 @@ test('incidents close, missing nodes go offline, networks stay apart', () => {
   const s0 = record(db, 'snapchain', { nodes: [node('x')], shards: [shard(false, 1)] }, t0)
   assert.deepEqual(h0.incidents, [{ shard: 1, start: t0 - 100_000, end: null }])
   assert.deepEqual(s0.incidents, [])
+  assert.equal(h0.since, t0)
+  assert.equal(record(db, 'snapchain', { nodes: [], shards: [] }, t0 + 1).since, t0)
   assert.equal(s0.nodes.length, 1) // Hypersnap's nodes aren't Snapchain's offline ones
 
   // Snapchain's live shard 1 leaves Hypersnap's shard-1 halt open

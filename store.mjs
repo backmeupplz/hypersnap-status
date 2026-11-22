@@ -51,6 +51,7 @@ export function record(db, net, s, at) {
   db.exec('BEGIN')
   try {
     if (!meta(db, 'since')) meta(db, 'since', String(at))
+    if (!meta(db, `since:${net}`)) meta(db, `since:${net}`, net === 'hypersnap' ? meta(db, 'since') : String(at))
     for (const n of s.nodes) upsert.run(n.id, at, at, n.url, JSON.stringify(n), net), tally.run(n.id, hour, 1)
     // this network's known nodes that the crawl didn't find count as down
     const live = new Set(s.nodes.map((n) => n.id))
@@ -76,6 +77,7 @@ export function record(db, net, s, at) {
   for (const n of s.nodes) Object.assign(n, { geo: (n.ip && JSON.parse(geo.get(n.ip)?.json ?? 'null')) || null, uptime: up(n.id), firstSeen: firsts.get(n.id) ?? at })
   for (const sh of s.shards) sh.uptime = up(shardKey(net, sh.id))
   s.incidents = db.prepare('SELECT shard, start, end FROM incidents WHERE net = ? ORDER BY start DESC LIMIT 20').all(net).map((r) => ({ ...r }))
+  s.since = +meta(db, `since:${net}`) // when tracking this network began
   return s
 }
 
