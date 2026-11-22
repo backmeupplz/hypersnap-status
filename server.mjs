@@ -1,4 +1,4 @@
-// hypersnap.borodutch.com: crawls the Hypersnap gossip mesh every minute (Snapchain shares it), keeps hourly uptime in
+// status.quilcast.com: crawls the Hypersnap gossip mesh every minute (Snapchain shares it), keeps hourly uptime in
 // SQLite, and serves the SPA (with per-page meta tags and the live snapshot inlined for crawlers), its JSON API and
 // the share images.
 import { Resvg } from '@resvg/resvg-js'
@@ -11,7 +11,7 @@ import { NAMES, nodeCard, siteCard } from './og.mjs'
 import { NETWORKS, parseValidators, summarize } from './status.mjs'
 import { known, locate, meta, open, record } from './store.mjs'
 
-const SITE = process.env.SITE ?? 'https://hypersnap.borodutch.com'
+const SITE = process.env.SITE ?? 'https://status.quilcast.com'
 const PORT = +(process.env.PORT ?? 3000)
 const DATA = process.env.DATA_DIR ?? './data'
 const EVERY = 60_000

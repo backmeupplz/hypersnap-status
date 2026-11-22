@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Status page for the Hypersnap network: hypersnap.borodutch.com",
+  "description": "Status page for the Hypersnap network: status.quilcast.com",
   "license": "MIT",
   "scripts": { "start": "node server.mjs", "test": "node --test" },
   "dependencies": { "@resvg/resvg-js": "2.6.2" }

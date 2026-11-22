@@ -50,7 +50,7 @@ export function getJson(url, timeout = 5000) {
   return new Promise((resolve) => {
     const u = new URL(url)
     const t0 = performance.now()
-    const req = (u.protocol === 'https:' ? https : http).get(u, { lookup: safeLookup, agent: false, headers: { 'user-agent': 'hypersnap-status (+https://hypersnap.borodutch.com)', accept: 'application/json' } }, (res) => {
+    const req = (u.protocol === 'https:' ? https : http).get(u, { lookup: safeLookup, agent: false, headers: { 'user-agent': 'hypersnap-status (+https://status.quilcast.com)', accept: 'application/json' } }, (res) => {
       const chunks = []
       let n = 0
       res.on('data', (c) => ((n += c.length) > 1e6 ? req.destroy() : chunks.push(c)))

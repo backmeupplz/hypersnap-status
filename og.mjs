@@ -20,7 +20,7 @@ const frame = (net, body) => `<svg xmlns="http://www.w3.org/2000/svg" width="120
 <rect width="1200" height="630" fill="url(#g)"/>
 <g transform="translate(72 64)"><rect width="40" height="40" rx="10" fill="#6d5dfc"/><path d="M12 13h16M12 20h10M12 27h16" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/></g>
 <text x="128" y="93" font-family="Inter" font-weight="700" font-size="28" fill="${C.text}">${NAMES[net]} Network Status</text>
-<text x="1128" y="93" text-anchor="end" font-family="Inter" font-size="24" fill="${C.muted}">hypersnap.borodutch.com</text>
+<text x="1128" y="93" text-anchor="end" font-family="Inter" font-size="24" fill="${C.muted}">status.quilcast.com</text>
 ${body}</svg>`
 
 export function headline(s) {

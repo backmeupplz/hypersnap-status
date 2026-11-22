@@ -1,6 +1,6 @@
 # Hypersnap Network Status
 
-Live status page for the [Hypersnap](https://github.com/farcasterorg/hypersnap) network, and for upstream [Snapchain](https://github.com/farcasterxyz/snapchain) which shares its gossip mesh, at **[hypersnap.borodutch.com](https://hypersnap.borodutch.com)** (Snapchain at `/snapchain`): every node reachable through the mesh, with its IP, location, version and sync state, each shard's latest block, validators and halts, plus uptime history.
+Live status page for the [Hypersnap](https://github.com/farcasterorg/hypersnap) network, and for upstream [Snapchain](https://github.com/farcasterxyz/snapchain) which shares its gossip mesh, at **[status.quilcast.com](https://status.quilcast.com)** (Snapchain at `/snapchain`): every node reachable through the mesh, with its IP, location, version and sync state, each shard's latest block, validators and halts, plus uptime history.
 
 ## How it works
 
