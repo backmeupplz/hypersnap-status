@@ -1,0 +1,10 @@
+{
+  "name": "hypersnap-status",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Status page for the Hypersnap network: hypersnap.borodutch.com",
+  "license": "MIT",
+  "scripts": { "start": "node server.mjs", "test": "node --test" },
+  "dependencies": { "@resvg/resvg-js": "2.6.2" }
+}

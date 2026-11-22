@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--meta-->
+<meta name="theme-color" content="#0c0e13" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f7fb" media="(prefers-color-scheme: light)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/"><svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="#6d5dfc"/><path d="M12 13h16M12 20h10M12 27h16" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/></svg>Hypersnap Status</a>
+  <nav><a href="/api/status">JSON API</a><a href="https://github.com/backmeupplz/hypersnap-status">Source</a></nav>
+</header>
+<main id="app">
+  <h1>Hypersnap Network Status</h1>
+  <p class="lead">Live health of the Hypersnap network: every node reachable through the gossip mesh, its IP, version and sync state, each shard's latest block and validators, uptime history and incidents. Checked every minute.</p>
+</main>
+<footer>
+  <p>Hypersnap is a community-run Farcaster network forked from Snapchain. This page walks the gossip mesh every minute through each node's public API (<code>/v1/info</code>, <code>/v1/currentPeers</code>). Nodes without a public API show up as seen in gossip.</p>
+  <p>Made by <a href="https://borodutch.com">Borodutch</a> · <a href="https://github.com/backmeupplz/hypersnap-status">Open source</a></p>
+</footer>
+<!--data-->
+</body>
+</html>

@@ -1,0 +1,31 @@
+# Hypersnap Network Status
+
+Live status page for the [Hypersnap](https://github.com/farcasterorg/hypersnap) network at **[hypersnap.borodutch.com](https://hypersnap.borodutch.com)**: every node reachable through the gossip mesh, with its IP, location, version and sync state, each shard's latest block, validators and halts, plus uptime history.
+
+## How it works
+
+Every minute `crawl.mjs` walks the mesh starting from a few public nodes. It asks each node's HTTP API for `/v1/info` (version and shard heights) and `/v1/currentPeers` (the peers it's connected to), and follows those peers' addresses to more nodes. A node counts as Hypersnap when it serves `/v1/nativeRegistration` (upstream Snapchain answers 404), gossips the `hyper:v1` capability, or is in a current validator set from [`validators.toml`](https://github.com/farcasterorg/hypersnap/blob/main/validators.toml) (a validator's peer ID is derived from its key). Nodes without a public API show up as "seen in gossip".
+
+`status.mjs` turns a crawl into the network state:
+
+- **Shards:** a shard's tip is the highest height any Hypersnap node reports. It's halted when no node has seen a block for 2 minutes.
+- **Nodes:** a node more than 60 blocks behind a tip is syncing.
+
+`server.mjs` keeps hourly uptime and incidents in SQLite (`DATA_DIR`) and serves the following:
+
+- the SPA (`public/`), with per-page meta tags and the live snapshot inlined
+- `/api/status` and `/api/node/<peer id>`
+- share images (`/og.png`, `/og/node/<peer id>.png`), drawn by `og.mjs` with resvg
+- `/sitemap.xml`
+
+Locations come from ip-api.com.
+
+## Run
+
+```sh
+npm install
+mkdir -p data && npm start   # http://localhost:3000
+npm test                     # status.mjs against a recorded crawl
+```
+
+MIT
