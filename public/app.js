@@ -3,6 +3,9 @@
 // rewrites regions whose markup changed, so a selection, the search box or focus survive it. Node data goes through esc().
 import { NAMES, dur, headline } from '/og.mjs'
 
+// opened as a mini app: tell the host it can drop its splash (the miniapp SDK's ready(), as a bare Comlink call)
+if (parent !== window) parent.postMessage({ id: 'ready', type: 'APPLY', path: ['ready'], argumentList: [{ type: 'RAW', value: {} }] }, '*')
+
 const app = document.getElementById('app')
 let data = JSON.parse(document.getElementById('data')?.textContent || 'null')
 let hours = null // { id, hours } for the node page

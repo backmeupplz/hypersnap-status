@@ -122,7 +122,9 @@ function send(req, res, status, type, body, maxAge = 30) {
   const headers = { 'content-type': type, 'cache-control': maxAge === 'immutable' ? 'public, max-age=31536000, immutable' : `public, max-age=${maxAge}`, 'x-content-type-options': 'nosniff', vary: 'accept-encoding' }
   if (text && enc.includes('br')) (body = brotliCompressSync(body)), (headers['content-encoding'] = 'br')
   else if (text && enc.includes('gzip')) (body = gzipSync(body)), (headers['content-encoding'] = 'gzip')
-  if (type.startsWith('text/html')) headers['content-security-policy'] = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+  // pages open as a mini app inside Farcaster clients (Quilcast's outage banner), and clients read /api/status themselves
+  if (type.startsWith('text/html')) headers['content-security-policy'] = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors *"
+  if (type === 'application/json') headers['access-control-allow-origin'] = '*'
   res.writeHead(status, headers).end(req.method === 'HEAD' ? undefined : body)
 }
 
